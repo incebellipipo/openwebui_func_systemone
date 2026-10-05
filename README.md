@@ -58,7 +58,7 @@ See the [TypeSafe API reference](https://docs.typesafe.ai/api) for the full form
 Pick a System One model in the dropdown, then paste a request body as your message. The body is sent as written to the server. A code fence around it is fine, and so are Python-style dicts (single quotes, `True`/`False`, trailing commas).
 
 - A model picked in the dropdown **overrides** any `"model"` field in the pasted JSON. The footer under the answer shows which model answered.
-- The **System One: (model from JSON)** entry does the opposite: it takes the model from the JSON's `"model"` field.
+- Optionally, `ADD_JSON_MODEL_ENTRY` adds a **System One: (model from JSON)** entry that does the opposite: it takes the model from the JSON's `"model"` field, which is handy for models not listed in `MODEL_NAMES`.
 
 The reply shows each answer, with probabilities sorted from most to least likely, followed by the raw JSON response:
 
@@ -81,7 +81,7 @@ tev1 · 398 tokens in, 3 out
 | `BASE_URL` | `http://ollama:11434` | Server base URL. Use `http://localhost:11434` if Open WebUI runs outside Docker. |
 | `ENDPOINT_PATH` | `/v1/systemone` | Endpoint path. |
 | `MODEL_NAMES` | `tev1,clef-flash` | Models to list in the dropdown, comma-separated. `*` lists every model the Ollama server has (models that are not System One models are refused by the server). |
-| `ADD_JSON_MODEL_ENTRY` | on | Adds the "(model from JSON)" entry. |
+| `ADD_JSON_MODEL_ENTRY` | off | Adds an extra "(model from JSON)" entry, for models you have not listed in `MODEL_NAMES`. |
 | `API_KEY` | empty | Leave empty for a local Ollama server. When set, it is sent in the auth header. |
 | `AUTH_HEADER` / `AUTH_SCHEME` | `Authorization` / `Bearer` | How the key is sent. Clear the scheme to send the bare key. |
 | `REQUEST_TIMEOUT` | 120 | Seconds. |
