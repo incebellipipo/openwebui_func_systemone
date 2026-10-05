@@ -25,7 +25,7 @@ HELP = (
     '   "instructions": "Which label fits?",\n'
     '   "criteria": {"billing": "Payments", "bug": "Software errors"}}}}\n'
     "```\n\n"
-    'A model picked in the dropdown overrides any `model` in the JSON. With the "(model from JSON)" entry, the JSON\'s `model` is used.'
+    "A model picked in the dropdown overrides any `model` in the JSON. With the \"(model from JSON)\" entry, the JSON's `model` is used."
 )
 
 
@@ -44,23 +44,16 @@ class Pipe:
             description="Comma-separated model names to list in the dropdown, e.g. 'tev1,clef-flash,nimble'. Use '*' to list every model the Ollama server has (non System One models will be rejected by the server if you pick them).",
         )
         ADD_JSON_MODEL_ENTRY: bool = Field(
-            default=True,
+            default=False,
             description="Also add a 'System One: (model from JSON)' dropdown entry. With it, the model comes from the \"model\" field of the pasted JSON; the other entries ignore that field and use the model you picked.",
         )
         API_KEY: str = Field(
             default="",
             description="Optional API key. Leave empty for a local Ollama server (no auth header is sent).",
         )
-        AUTH_HEADER: str = Field(
-            default="Authorization", description="Header carrying the API key."
-        )
-        AUTH_SCHEME: str = Field(
-            default="Bearer",
-            description="Prefix before the key; empty sends the bare key.",
-        )
-        REQUEST_TIMEOUT: int = Field(
-            default=120, description="Per-request timeout in seconds."
-        )
+        AUTH_HEADER: str = Field(default="Authorization", description="Header carrying the API key.")
+        AUTH_SCHEME: str = Field(default="Bearer", description="Prefix before the key; empty sends the bare key.")
+        REQUEST_TIMEOUT: int = Field(default=120, description="Per-request timeout in seconds.")
         SHOW_RAW_JSON: bool = Field(
             default=True,
             description="Append the raw response JSON (in a code block) under the formatted answer.",
@@ -78,13 +71,9 @@ class Pipe:
                     names.append(found)
         entries = []
         if self.valves.ADD_JSON_MODEL_ENTRY:
-            entries.append(
-                {"id": JSON_MODEL_ID, "name": "System One: (model from JSON)"}
-            )
+            entries.append({"id": JSON_MODEL_ID, "name": "System One: (model from JSON)"})
         entries.extend({"id": n, "name": f"System One: {n}"} for n in names)
-        return entries or [
-            {"id": JSON_MODEL_ID, "name": "System One: (model from JSON)"}
-        ]
+        return entries or [{"id": JSON_MODEL_ID, "name": "System One: (model from JSON)"}]
 
     async def _discover(self) -> list:
         """Names of all models on the server, via Ollama's /api/tags. Empty on any failure."""
@@ -112,9 +101,7 @@ class Pipe:
 
         for field in ("state", "questions"):
             if field not in request:
-                return (
-                    f"The request is missing the required field `{field}`.\n\n" + HELP
-                )
+                return f"The request is missing the required field `{field}`.\n\n" + HELP
 
         # body["model"] looks like "<function id>.<model name>". A model picked
         # in the dropdown always wins over any "model" in the pasted JSON; only
@@ -278,9 +265,7 @@ class Pipe:
 
         if kind == "score":
             score = self._num(answer.get("score"))
-            legend = (
-                answer.get("legend") if isinstance(answer.get("legend"), dict) else {}
-            )
+            legend = answer.get("legend") if isinstance(answer.get("legend"), dict) else {}
             level = legend.get(str(round(score))) if score is not None else None
             top = f"/{len(legend) - 1}" if legend else ""
             shown = f"{score:.2f}" if score is not None else "n/a"
@@ -310,10 +295,6 @@ class Pipe:
             p = self._num(value)
             if p is None:
                 continue
-            label = (
-                f"{name}: {legend[name]}"
-                if isinstance(legend, dict) and name in legend
-                else name
-            )
+            label = f"{name}: {legend[name]}" if isinstance(legend, dict) and name in legend else name
             rows.append(f"- {label} — {self._percent(p)}")
         return "\n\n" + "\n".join(rows) if rows else ""
