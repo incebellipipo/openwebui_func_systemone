@@ -1,0 +1,97 @@
+# System One for Open WebUI
+
+> Two single-file extensions for Open WebUI that talk to System One models: typed decision models that take a `state` plus typed questions (noul, choice, score) and return typed answers with probabilities and a confidence. Works with Ollama (`POST /v1/systemone`, v0.35.0+) and TypeSafe's hosted API; any server that implements the same request format can be used by changing valves.
+
+This file is for LLMs and coding agents working on or answering questions about this repo. Humans should read the README.
+
+## Files
+
+- [system_one_pipe.py](system_one_pipe.py): an Open WebUI **Function** (class `Pipe`). Adds "System One: <model>" entries to the model dropdown. The user's message is a System One request body (JSON); it is sent as written and the typed answers are returned formatted.
+- [system_one.py](system_one.py): an Open WebUI **Tool** (class `Tools`). Lets a normal chat model call System One itself through tools: `system_one_yes_no`, `system_one_classify`, `system_one_score`, `system_one_ask`, `system_one_classify_batch`.
+- [README.md](README.md): install steps, valve tables, troubleshooting.
+
+Each Python file is pasted whole into Open WebUI (Functions or Tools editor), so each must stay **self-contained, single-file, and dependency-light** (standard library, `aiohttp`, `pydantic` only; the last two ship with Open WebUI).
+
+## System One wire format
+
+Request, `POST <BASE_URL><ENDPOINT_PATH>` (default path `/v1/systemone`):
+
+```json
+{
+  "model": "tev1",
+  "state": "string, object, or array",
+  "questions": {
+    "<name>": {"type": "noul", "instructions": "yes/no question"},
+    "<name>": {"type": "choice", "instructions": "...", "criteria": {"option": "description"}},
+    "<name>": {"type": "score", "instructions": "...", "criteria": ["lowest level", "...", "highest level"]}
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "model": "tev1",
+  "answers": {
+    "<name>": {"type": "noul", "noul": 0.99},
+    "<name>": {"type": "choice", "choice": "overdue", "probabilities": {"overdue": 0.99}, "confidence": 0.99},
+    "<name>": {"type": "score", "score": 1.05, "legend": {"0": "Calm"}, "probabilities": {"0": 0.0}, "confidence": 0.9}
+  },
+  "usage": {"input_tokens": 398, "output_tokens": 3}
+}
+```
+
+- `instructions` may be a string, object, or array. An object can hold the question in a `question` field and data it refers to in other fields.
+- Noul verdict in this repo: probability >= 0.5 is shown as "yes". `confidence` only exists for choice and score.
+- Authoritative references: [TypeSafe API reference](https://docs.typesafe.ai/api.md), [Ollama System One API](https://docs.ollama.com/api/systemone), [TypeSafe docs index](https://docs.typesafe.ai/llms.txt).
+
+## Provider limits
+
+- Ollama: choice and score take 2-26 options/levels; 1-64 questions per request; 64 KiB body without images; no streaming; the model must be a local GGUF System One model (cloud and MLX models are unsupported). Errors: 400 (bad request, or prompt exceeds context), 404 (model not found), 413 (body too large), 500.
+- TypeSafe: choice up to 255 options, score up to 10 levels; auth with `Authorization: Bearer <key>`.
+- The tool's `MAX_CHOICE_OPTIONS` (26) and `MAX_SCORE_LEVELS` (10) defaults are the stricter of the two so requests are not rejected by either provider.
+
+## How the pipe works (system_one_pipe.py)
+
+- `pipes()` is async and returns one entry per name in the `MODEL_NAMES` valve (`*` also lists every model from Ollama's `/api/tags`; failure falls back to the typed names). Optional extra entry `from_json` (valve `ADD_JSON_MODEL_ENTRY`, off by default).
+- Open WebUI passes the selected model as `"<function id>.<model name>"` in `body["model"]`. The code splits on the **first** `.` only, because model names can contain dots and colons (for example `qwen3.5:35b`).
+- Precedence: a model chosen in the dropdown **always overrides** any `"model"` in the pasted JSON. Only the `from_json` entry takes the model from the JSON.
+- Input parsing is deliberately lenient: strips a code fence, keeps the outermost `{...}`, tolerates trailing commas, and falls back to `ast.literal_eval` for Python-style dicts.
+- Output: formatted answers (probabilities sorted descending, one decimal, 100% / <0.1% edge cases), footer with model and token usage, then the raw JSON in a fenced code block when `SHOW_RAW_JSON` is on.
+- Status events set `hidden` when done so no stray "Done" line remains in the message.
+
+## How the tool works (system_one.py)
+
+- Public methods of `Tools` become tools. Their docstrings (including the `:param name:` lines) become the tool descriptions the chat model sees, so keep them short: they are sent with every request in any chat where the tool is enabled and cost context. Helpers must start with `_` so they are not exposed.
+- `__event_emitter__`, `__messages__` and `__files__` are injected by Open WebUI and must not appear in the tool schema's required parameters.
+- State resolution order: explicit `state` argument, then attached file contents, then the last `CONTEXT_MESSAGES` chat messages.
+- Errors are returned as strings (`"<PROVIDER_NAME> error: ..."`), not raised, so the chat model can report them.
+- All provider differences live in valves: `BASE_URL`, `ENDPOINT_PATH`, `MODEL`, `API_KEY` (empty means no auth header is sent), `AUTH_HEADER`, `AUTH_SCHEME`, `EXTRA_HEADERS`, `EXTRA_BODY`, plus limits. Do not hardcode provider names, URLs or model names outside valve defaults.
+- The tool retries 429, 529, 5xx, timeouts and network errors with exponential backoff and honours `Retry-After`; 400, 401/403, 404, 413 and 422 fail immediately with an explanatory message.
+
+## Gotchas
+
+- Valve values saved in Open WebUI **override** the defaults in the file. After changing a default, the user may need to change the saved valve too.
+- Open WebUI did not render `<details>` tags returned by the pipe (they showed as literal text). Use fenced code blocks for collapsible content.
+- Do not add a `requirements:` line to the file headers unless truly needed: `aiohttp` and `pydantic` already ship with Open WebUI, and a failing pip install can block saving.
+- Functions and Tools are separate places in Open WebUI. Pasting the pipe under Tools (or the tool under Functions) fails because the expected class (`Pipe` vs `Tools`) is missing. A new function is off until its toggle is switched on.
+- Selecting a System One model from Open WebUI's own model list and pasting a request does not work: Open WebUI sends a chat message to the model, not a System One request. Use the pipe entry.
+- A small context window on the server produces HTTP 400 "exceeds the available context size". The fix is a larger context length for the model on the server (for example Ollama's `num_ctx` / `OLLAMA_CONTEXT_LENGTH`), not a code change.
+- Low `confidence` with a spread-out probability distribution is a valid answer, not an error.
+- If Open WebUI runs in Docker, `localhost` is the container; use the Ollama container's hostname (default valve: `http://ollama:11434`) or `host.docker.internal`.
+
+## Guidance for changes
+
+- Keep both files compiling on a typical Python 3.9+ Open WebUI image and keep the type hints simple (`dict`, `list`, `Optional`), since Open WebUI builds tool specs from signatures.
+- Do not invent response fields, endpoints or model names. If something is not in the TypeSafe or Ollama docs, mark it as untested in code comments and in the README (the OpenRouter values are currently untested and come from the upstream script).
+- When adding a valve, give it a default that works for Ollama and TypeSafe, add a `description`, and add it to the README valve table.
+- The sandbox used to develop this had no network access: HTTP behaviour was verified in a real Open WebUI + Ollama setup (pipe) or not at all (tool). Parsing and formatting can be unit-tested by stubbing `aiohttp`; do not claim a live test you did not run.
+- Preserve attribution: `system_one.py` is adapted from `ask_jev.py` by Aryan Ebrahimpour (MIT), https://github.com/systemgroupnet/openwebui-ask-jev.
+
+## Optional
+
+- [Upstream script this tool is adapted from](https://github.com/systemgroupnet/openwebui-ask-jev/blob/master/ask_jev.py)
+- [TypeSafe: System One concept](https://docs.typesafe.ai/concepts/system-one.md)
+- [TypeSafe: confidence](https://docs.typesafe.ai/confidence.md)
+- [TypeSafe: models](https://docs.typesafe.ai/models.md)
